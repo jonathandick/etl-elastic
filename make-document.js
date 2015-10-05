@@ -1,61 +1,17 @@
 /**
  * Created by Jonathan on 10/3/2015.
  */
-
+ 
 var settings = require('./conf/settings.js');
 var mysql = require('mysql');
 var q = require('q');
 var _ = require('lodash');
+var elasticsearch = require('elasticsearch');
+
 
 var pool = mysql.createPool(settings.mysqlPoolSettings);
 
-var labMapping
 
-var mapping =
-{
-    "mappings": {
-        "encounter": {
-            "properties": {
-                encounterDatetime: {"type": "date"},
-                encounterTypeUuid: {"type": "string"},
-                encounterTypeName: {"type": "string"},
-                formUuid: {"type": "string"},
-                formName: {"type": "string"},
-                locationUuid: {"type": "string"},
-                locationName: {"type": "string"},
-                encounterId: {"type": "integer"},
-                encounterUuid: {"type": "string"},
-                providers: {"type": "string"},
-                dateCreated: {"type": "date"},
-                voided: {"type": "boolean"},
-                dateVoided: {"type": "date"},
-                obsSet: {
-                    "type": "nested",
-                    "properties": {
-                        obsGroupId: {"type":"integer"},
-                        dateCreated: {"type": "date"},
-                        obsDatetime: {"type": "date"},
-                        conceptId: {"type": "integer"},
-                        conceptUuid: {"type": "string"},
-                        valueCoded: {"type": "integer"},
-                        valueBoolean: {"type": "boolean"},
-                        valueNumeric: {"type": "float"},
-                        valueDatetime: {"type": "date"},
-                        valueText: {"type": "string"},
-                        valueDrug: {"type": "integer"},
-                        valueGroupId: {"type": "integer"},
-                        formUuid: {"type": "string"},
-                        formName: {"type": "string"},
-                        locationUuid: {"type": "string"},
-                        locationName: {"type": "string"},
-                        voided: {"type": "boolean"},
-                        dateVoided: {"type": "date"}
-                    }
-                }
-            }
-        }
-    }
-}
 
 
 
@@ -126,14 +82,12 @@ function getEncounters(encounterIds) {
             callback(result);
             return defer.reject(err);
         }
-        ids = "";
-        _.forEach(encounterIds,function(id) {
-            ids += id + ",";
-        });
+        ids = encounterIds.join();
 
-
-        var query = "select * from amrs.encounter where voided=0 and encounter_id in (" + ids + ")";
-
+        var query = "select * from amrs.encounter t1"
+	query += " join amrs.encounter_type t2 on t1.encounter_type = t2.encounter_type_id"
+	query += " where t1.voided=0 and encounter_id in (" + ids + ")";
+	console.log(query);
         connection.query(query,
             function(err,rows,fields) {
                 return defer.resolve(rows);
@@ -144,14 +98,19 @@ function getEncounters(encounterIds) {
     return defer.promise;
 }
 
+//getEncounters([600]).then(function(d) { console.log(d);});
+
 
 function getEncounterIds(obsSet) {
-    encounterIds = [];
-    _.foreach(obsSet,function(obs) {
+    var encounterIds = [];
+    for(var i=0 in obsSet) {
+	var obs = obsSet[i];
         encounterIds.push(obs["encounter_id"])
-    });
+    }
     return _.uniq(encounterIds);
 }
+
+
 
 function getObs(personId) {
     var defer = q.defer();
@@ -164,26 +123,28 @@ function getObs(personId) {
             return defer.reject(err);
         }
         var query = "select * from amrs.obs where voided=0 and person_id=" + personId;
-
+	
         connection.query(query,
-            function(err,rows,fields) {
-                return defer.resolve(rows);
-            }
-        );
+			 function(err,rows,fields) {			     
+			     return defer.resolve(rows);
+			 }
+			);
         connection.release();
     });
     return defer.promise;
-
 }
+
+
 
 
 function getPatientData(personId) {
     var defer = q.defer();
     var data = {};
-    getObs(person_id)
+    getObs(personId)
         .then(function(obsRows) {
             data["obsSet"] = obsRows;
-            getEncounterIds(obsSet).then(function(encounterRows) {
+	    var ids = getEncounterIds(obsRows);
+            getEncounters(ids).then(function(encounterRows) {		
                 data["encounters"] = encounterRows;
                 defer.resolve(data);
             });
@@ -192,12 +153,12 @@ function getPatientData(personId) {
 }
 
 /*
-function getHivStartDate(o,prevDocument) {
-    var result =
+  function getHivStartDate(o,prevDocument) {
+  var result =
         (obs[120].value === 100)
         || (obs[130]["group"][100]["value"] === 100);
-
-    return result;
+	
+	return result;
     var obsSet =
     {
         120: {
@@ -236,21 +197,157 @@ function makeDocument(encounter,prevDocument) {
         //document[indicator.field] = result;
         result = getHivStartDate(encounter["obsSet"]);
     }
-    console.log("hello make document again");
-
-    console.log(document);
     return document;
 }
 
 //145991
 
-getObs(600).then(function(obsSet) {
-    console.log(obsSet);
-    var encounters = makeEncounters(obsSet);
-    var documents = makeDocuments(encounters);
-    console.log('finished');
-});
+
+function makeEncounterDocuments(personId) {
+    var defer = q.defer();
+    var encounters = {};
+    var encounterRow, encounter, obs,obsSet;
+    getPatientData(600).then(function(data) {
+	
+	for(var i=0 in data.encounters) {
+	    encounterRow = data.encounters[i];
+	    encounter = {
+		encounterDatetime: encounterRow["encounter_datetime"],
+		encounterType: encounterRow["encounter_type"],
+		encounterDatetime: encounterRow["encounter_datetime"],
+		encounterId: encounterRow["encounter_id"],
+		encounterUuid: encounterRow["uuid"],
+		voided:encounterRow.voided,
+		dateVoided:encounterRow.date_voided,
+		dateCreated:encounterRow.data_created,
+		
+		obsSet:[]
+	    }
+	    encounters[encounterRow.encounter_id] = encounter;
+	    
+	}
+	for(var i=0 in data.obsSet) {
+	    obsRow = data.obsSet[i];
+	    obs = {
+		obsId:obsRow.obs_id,
+		obsUuid:obsRow.uuid,
+		obsDatetime:obsRow.obs_datetime,
+		conceptId:obsRow.concept_id,
+		voided:obsRow.voided,
+		dateVoided:obsRow.date_voided,
+		dateCreated:obsRow.data_created,		
+	    }
+	    if(obsRow.value_coded) obs["valueCoded"] = obsRow.value_coded;
+	    else if(obsRow.value_boolean) obs["valueBoolean"] = obsRow.value_boolean;
+	    else if(obsRow.value_datetime) obs["valueDatetime"] = obsRow.value_datetime;
+	    else if(obsRow.value_numeric) obs["valueNumeric"] = obsRow.value_numeric;
+	    else if(obsRow.value_text) obs["valueText"] = obsRow.value_text;
+	    
+	    if(obsRow.encounter_id) {
+		encounter = encounters[obsRow.encounter_id];
+		encounter.obsSet.push(obs);
+	    }
+	}
+	defer.resolve(encounters);
+    });
+    return defer.promise;
+}
 
 
 
+function addToElastic(patientId) {
+    var body = [];
+    var encounter;
+    makeEncounterDocuments(patientId).then(patientEncounters) {
+	for(var i in patientEncounters) {
+	    encounter = patientEncounters[i];
+	    body.push({_index:"amrs",_type:"encounter",_id:encounter.encounterId});
+	    body.push(encounter);
+	}
+	
+	var client = new elasticsearch.Client({
+	    host: '104.236.65.80:9200',
+	    log: 'trace'
+	});
+	client.bulk(body,function(error){console.trace(error.message)});
+	
+    }
+}
+
+
+var encounterMapping =
+    {
+    "mappings": {
+        "encounter": {
+            "properties": {
+                encounterId: {"type": "integer"},
+                encounterUuid: {"type": "string"},		
+                encounterDatetime: {"type": "date"},
+		encounterTypeId: {"type":"integer"},
+                encounterTypeUuid: {"type": "string"},
+                encounterTypeName: {"type": "string"},
+                formUuid: {"type": "string"},
+                formName: {"type": "string"},
+                locationUuid: {"type": "string"},
+                locationName: {"type": "string"},
+		locationId: {"type":"integer"},
+                providers: {"type": "string"},
+                dateCreated: {"type": "date"},
+                voided: {"type": "boolean"},
+                dateVoided: {"type": "date"},
+                obsSet: {
+                    "type": "nested",
+                    "properties": {
+			obsId:{"type":"integer"},
+			obsUuid:{"type":"string"},
+                        obsGroupId: {"type":"integer"},
+                        dateCreated: {"type": "date"},
+                        obsDatetime: {"type": "date"},
+                        conceptId: {"type": "integer"},
+                        conceptUuid: {"type": "string"},
+                        valueCoded: {"type": "integer"},
+                        valueBoolean: {"type": "boolean"},
+                        valueNumeric: {"type": "float"},
+                        valueDatetime: {"type": "date"},
+                        valueText: {"type": "string"},
+                        valueDrug: {"type": "integer"},
+                        valueGroupId: {"type": "integer"},
+                        formUuid: {"type": "string"},
+                        formName: {"type": "string"},
+                        locationUuid: {"type": "string"},
+                        locationName: {"type": "string"},
+                        voided: {"type": "boolean"},
+                        dateVoided: {"type": "date"}
+                    }
+                }
+            }
+        }
+    }
+};
+
+
+function addEncounterMapping() {
+    var client = new elasticsearch.Client({
+	host: '104.236.65.80:9200',
+	log: 'trace'
+    });
+    
+    client.indices.putMapping(
+	{
+	    index:"amrs",
+	    body:encounterMapping
+	}
+    );
+}
+addEncounterMapping();    
+    
+
+
+
+
+//getPatientData(600).then(function(data) {console.log(data);});
+
+
+addToElastic(600).then(function(data) { console.log(data);});
+//console.log(e);
 
