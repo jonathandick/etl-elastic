@@ -73,6 +73,7 @@ function makeEncounters(obsSet) {
 
 //encounterIds: array of unique encounterIds
 function getEncounters(encounterIds) {
+
     var defer = q.defer();
     pool.getConnection(function(err,connection) {
         if(err) {
@@ -84,9 +85,13 @@ function getEncounters(encounterIds) {
         }
         ids = encounterIds.join();
 
+	/*
         var query = "select * from amrs.encounter t1"
 	query += " join amrs.encounter_type t2 on t1.encounter_type = t2.encounter_type_id"
 	query += " where t1.voided=0 and encounter_id in (" + ids + ")";
+	*/
+
+	var query = "select * from amrs.encounter t1 where t1.voided=0 and encounter_id in (" + ids + ")";
 	console.log(query);
         connection.query(query,
             function(err,rows,fields) {
@@ -113,6 +118,7 @@ function getEncounterIds(obsSet) {
 
 
 function getObs(personId) {
+
     var defer = q.defer();
     pool.getConnection(function(err,connection) {
         if(err) {
@@ -144,7 +150,7 @@ function getPatientData(personId) {
         .then(function(obsRows) {
             data["obsSet"] = obsRows;
 	    var ids = getEncounterIds(obsRows);
-            getEncounters(ids).then(function(encounterRows) {		
+            getEncounters(ids).then(function(encounterRows) {				
                 data["encounters"] = encounterRows;
                 defer.resolve(data);
             });
@@ -152,6 +158,123 @@ function getPatientData(personId) {
     return defer.promise;
 }
 
+
+function getPatients() {
+    pool.getConnection(function(err,connection) {
+        if(err) {
+            result.errorMessage = "Database Connection Error";
+            result.error = err;
+            console.log('Database Connection Error');
+            callback(result);
+            return defer.reject(err);
+        }
+        //var query = "select count(*) as total from amrs.obs where voided=0";
+	var query = "select count(*) as total from etl.person";
+
+        connection.query(query,
+			 function(err,rows,fields) {
+			     var total = rows[0].total;
+			     var maxRows = 1000;
+			     var iterations = Math.floor(total/maxRows);
+			     for(var i=0;i<= iterations;i++) {
+				 //query = "select person_id from amrs.person where voided=0  limit " + maxRows + "," + (i*maxRows);
+				 query = "select person_id from etl.person limit " + maxRows + "," + (i*maxRows);
+				 console.log(query);
+				 connection.query(query,
+						  function(err,rows,fields) {
+						      
+						      for(var i=0 in rows) {
+							  person_id = rows[i]["person_id"];							  
+							  addToElastic(person_id);
+						      }
+						  });
+			     }
+			 }
+			);
+        connection.release();
+    });
+}
+
+
+function getPatients2() {
+    pool.getConnection(function(err,connection) {
+        if(err) {
+            result.errorMessage = "Database Connection Error";
+            result.error = err;
+            console.log('Database Connection Error');
+            callback(result);
+            return defer.reject(err);
+        }
+        //var query = "select count(*) as total from amrs.obs where voided=0";
+	var query = "select person_id from etl.person";
+
+        connection.query(query,
+			 function(err,rows,fields) {			     			     
+			     for(var i in rows) {
+				 console.log(i);
+				 //query = "select person_id from amrs.person where voided=0  limit " + maxRows + "," + (i*maxRows);
+				 person_id = rows[i]["person_id"];							  
+				 
+				 //addToElastic(person_id);
+			     }
+			     addToElastic(rows[0].person_id);
+			 });
+        connection.release();
+    });
+}
+
+
+
+/*
+function test(lastUpdate) {
+
+    //Get any obs that have been voided since last update
+    var query = "select encounter_id from amrs.obs where t2.voided=1 and t2.date_voided >= " + lastUpdate + " and date_created<= " + lastUpdate;
+    
+    //Get encounter UUIds of voided obs
+    
+
+    //add encounter_ids to table of encounters to get from amrs
+    
+    //get encounter_id of obs with voided=0 and date_created >= lastUpdate;
+    //get encounter uuids for encounter_ids
+    
+
+    //delete in elastic any encounter with encounterUUid above
+
+    //build encounters for all above
+    //add to elastic
+}
+*/
+/*
+function getObsByDate(startDate) {
+    var defer = q.defer();
+    pool.getConnection(function(err,connection) {
+        if(err) {
+            result.errorMessage = "Database Connection Error";
+            result.error = err;
+            console.log('Database Connection Error');
+            callback(result);
+            return defer.reject(err);
+        }
+        var query = "select count(*) as total from amrs.obs where voided=0 and date_created >= " + startDate;
+	
+        connection.query(query,
+			 function(err,rows,fields) {			     
+			     var total = rows[0].total;
+			     var maxRows = 10000;
+			     var iterations = Math.floor(total/max);
+			     for(var i=0;i<= iterations;i++) {
+				 query = "select * from amrs.obs where voided=0 and date_created >= " + startDate + " limit " + maxRows + "," + (i*maxRows);
+				 connection.query(query,
+
+			 }
+			);
+        connection.release();
+    });
+    return defer.promise;
+}
+*/
 
 function makeEncounterDocuments(personId) {
     var defer = q.defer();
@@ -208,9 +331,11 @@ function makeEncounterDocuments(personId) {
 
 
 function addToElastic(patientId) {
+
     var body = [];
     var encounter;
     makeEncounterDocuments(patientId).then(function(patientEncounters) {
+
 	for(var i in patientEncounters) {
 	    encounter = patientEncounters[i];
 	    body.push({index:{"_index":"amrs","_type":"encounter","_id":encounter.encounterId}});
@@ -225,7 +350,7 @@ function addToElastic(patientId) {
 	    body: body
 	};
 	
-	client.bulk(payload,function(error){console.trace(error)});
+	client.bulk(payload,function(error){});
     });
 }
 
@@ -296,14 +421,26 @@ function addEncounterMapping() {
     );
 }
 //addEncounterMapping();    
-    
+getPatients2();    
 
 
 
 
 //getPatientData(600).then(function(data) {console.log(data);});
+
 //145991
 
+/*
+addToElastic(600);
 addToElastic(145991);
+addToElastic(657);
+addToElastic(715);
+addToElastic(760);
+addToElastic(786);
+addToElastic(798);
+addToElastic(845);
+addToElastic(859);
+addToElastic(964);
+*/
 //console.log(e);
 
