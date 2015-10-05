@@ -7,7 +7,7 @@ var mysql = require('mysql');
 var q = require('q');
 var _ = require('lodash');
 var elasticsearch = require('elasticsearch');
-
+var util = require('util');
 
 var pool = mysql.createPool(settings.mysqlPoolSettings);
 
@@ -105,7 +105,7 @@ function getEncounterIds(obsSet) {
     var encounterIds = [];
     for(var i=0 in obsSet) {
 	var obs = obsSet[i];
-        encounterIds.push(obs["encounter_id"])
+        if(obs.encounter_id) encounterIds.push(obs["encounter_id"])
     }
     return _.uniq(encounterIds);
 }
@@ -152,91 +152,43 @@ function getPatientData(personId) {
     return defer.promise;
 }
 
-/*
-  function getHivStartDate(o,prevDocument) {
-  var result =
-        (obs[120].value === 100)
-        || (obs[130]["group"][100]["value"] === 100);
-	
-	return result;
-    var obsSet =
-    {
-        120: {
-            concept: "",
-            valueCoded | valueNumeric | valueText | : "",
-            obsSet: {
-                300:{concept,value,group}
-            }
-            }
-        }
-    }
-}
-*/
-
-
-function makeDocuments(encounters) {
-    var documents = [];
-    var prevDocument, document, encounter;
-    for(var i in encounters) {
-        encounter = encounters[i];
-        prevDocument = document;
-        document = makeDocument(encounter,prevDocument);
-        documents.push(document);
-    }
-    return documents;
-}
-
-
-function makeDocument(encounter,prevDocument) {
-    var indicators = [{"field":"hivStartDate","function":getHivStartDate}];
-    var indicator,result;
-    var document;
-    for(var i in indicators) {
-        indicator = indicators[i];
-        //result = indicator["function"](encounter.obsSet,prevDocument);
-        //document[indicator.field] = result;
-        result = getHivStartDate(encounter["obsSet"]);
-    }
-    return document;
-}
-
-//145991
-
 
 function makeEncounterDocuments(personId) {
     var defer = q.defer();
     var encounters = {};
     var encounterRow, encounter, obs,obsSet;
-    getPatientData(600).then(function(data) {
-	
+    getPatientData(personId).then(function(data) {
+
 	for(var i=0 in data.encounters) {
 	    encounterRow = data.encounters[i];
 	    encounter = {
-		encounterDatetime: encounterRow["encounter_datetime"],
-		encounterType: encounterRow["encounter_type"],
-		encounterDatetime: encounterRow["encounter_datetime"],
-		encounterId: encounterRow["encounter_id"],
-		encounterUuid: encounterRow["uuid"],
-		voided:encounterRow.voided,
-		dateVoided:encounterRow.date_voided,
-		dateCreated:encounterRow.data_created,
+		"encounterDatetime": encounterRow["encounter_datetime"],
+		"encounterType": encounterRow["encounter_type"],
+		"encounterDatetime": encounterRow["encounter_datetime"],
+		"encounterId": encounterRow["encounter_id"],
+		"encounterUuid": encounterRow["uuid"],
+		"voided":encounterRow.voided,
+		"dateVoided":encounterRow.date_voided,
+		"dateCreated":encounterRow.data_created,
 		
-		obsSet:[]
+		"obsSet":[]
 	    }
 	    encounters[encounterRow.encounter_id] = encounter;
 	    
 	}
+
 	for(var i=0 in data.obsSet) {
 	    obsRow = data.obsSet[i];
 	    obs = {
-		obsId:obsRow.obs_id,
-		obsUuid:obsRow.uuid,
-		obsDatetime:obsRow.obs_datetime,
-		conceptId:obsRow.concept_id,
-		voided:obsRow.voided,
-		dateVoided:obsRow.date_voided,
-		dateCreated:obsRow.data_created,		
+		"obsId":obsRow.obs_id,
+		"obsUuid":obsRow.uuid,
+		"obsDatetime":obsRow.obs_datetime,
+		"conceptId":obsRow.concept_id,
+		"voided":obsRow.voided,
+		"dateCreated":obsRow.date_created,		
 	    }
+	    if(obsRow.voided) obs["dateVoided"] = obsRow.date_voided;
+
 	    if(obsRow.value_coded) obs["valueCoded"] = obsRow.value_coded;
 	    else if(obsRow.value_boolean) obs["valueBoolean"] = obsRow.value_boolean;
 	    else if(obsRow.value_datetime) obs["valueDatetime"] = obsRow.value_datetime;
@@ -258,26 +210,29 @@ function makeEncounterDocuments(personId) {
 function addToElastic(patientId) {
     var body = [];
     var encounter;
-    makeEncounterDocuments(patientId).then(patientEncounters) {
+    makeEncounterDocuments(patientId).then(function(patientEncounters) {
 	for(var i in patientEncounters) {
 	    encounter = patientEncounters[i];
-	    body.push({_index:"amrs",_type:"encounter",_id:encounter.encounterId});
-	    body.push(encounter);
+	    body.push({index:{"_index":"amrs","_type":"encounter","_id":encounter.encounterId}});
+	    body.push(encounter);	    
 	}
 	
 	var client = new elasticsearch.Client({
 	    host: '104.236.65.80:9200',
 	    log: 'trace'
 	});
-	client.bulk(body,function(error){console.trace(error.message)});
+	var payload = {
+	    body: body
+	};
 	
-    }
+	client.bulk(payload,function(error){console.trace(error)});
+    });
 }
 
 
 var encounterMapping =
-    {
-    "mappings": {
+{
+
         "encounter": {
             "properties": {
                 encounterId: {"type": "integer"},
@@ -322,8 +277,8 @@ var encounterMapping =
                 }
             }
         }
-    }
-};
+
+}
 
 
 function addEncounterMapping() {
@@ -335,19 +290,20 @@ function addEncounterMapping() {
     client.indices.putMapping(
 	{
 	    index:"amrs",
+	    type:"encounter",
 	    body:encounterMapping
 	}
     );
 }
-addEncounterMapping();    
+//addEncounterMapping();    
     
 
 
 
 
 //getPatientData(600).then(function(data) {console.log(data);});
+//145991
 
-
-addToElastic(600).then(function(data) { console.log(data);});
+addToElastic(145991);
 //console.log(e);
 
