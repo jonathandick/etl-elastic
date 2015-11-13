@@ -7,7 +7,7 @@ var mysql = require('mysql');
 var q = require('q');
 var _ = require('lodash');
 var elasticsearch = require('elasticsearch');
-
+var util = require('util');
 
 var pool = mysql.createPool(settings.mysqlPoolSettings);
 
@@ -73,6 +73,7 @@ function makeEncounters(obsSet) {
 
 //encounterIds: array of unique encounterIds
 function getEncounters(encounterIds) {
+
     var defer = q.defer();
     pool.getConnection(function(err,connection) {
         if(err) {
@@ -84,9 +85,18 @@ function getEncounters(encounterIds) {
         }
         ids = encounterIds.join();
 
+<<<<<<< HEAD
         var query = "select * from amrs.encounter t1";
 	query += " join amrs.encounter_type t2 on t1.encounter_type = t2.encounter_type_id";
+=======
+	/*
+        var query = "select * from amrs.encounter t1"
+	query += " join amrs.encounter_type t2 on t1.encounter_type = t2.encounter_type_id"
+>>>>>>> 4c3bd89aea09566e27c6851b3d2e0cc84ee83a2b
 	query += " where t1.voided=0 and encounter_id in (" + ids + ")";
+	*/
+
+	var query = "select * from amrs.encounter t1 where t1.voided=0 and encounter_id in (" + ids + ")";
 	console.log(query);
         connection.query(query,
             function(err,rows,fields) {
@@ -105,7 +115,7 @@ function getEncounterIds(obsSet) {
     var encounterIds = [];
     for(var i=0 in obsSet) {
 	var obs = obsSet[i];
-        encounterIds.push(obs["encounter_id"])
+        if(obs.encounter_id) encounterIds.push(obs["encounter_id"])
     }
     return _.uniq(encounterIds);
 }
@@ -113,6 +123,7 @@ function getEncounterIds(obsSet) {
 
 
 function getObs(personId) {
+
     var defer = q.defer();
     pool.getConnection(function(err,connection) {
         if(err) {
@@ -144,7 +155,7 @@ function getPatientData(personId) {
         .then(function(obsRows) {
             data["obsSet"] = obsRows;
 	    var ids = getEncounterIds(obsRows);
-            getEncounters(ids).then(function(encounterRows) {		
+            getEncounters(ids).then(function(encounterRows) {				
                 data["encounters"] = encounterRows;
                 defer.resolve(data);
             });
@@ -152,66 +163,134 @@ function getPatientData(personId) {
     return defer.promise;
 }
 
-/*
-  function getHivStartDate(o,prevDocument) {
-  var result =
-        (obs[120].value === 100)
-        || (obs[130]["group"][100]["value"] === 100);
-	
-	return result;
-    var obsSet =
-    {
-        120: {
-            concept: "",
-            valueCoded | valueNumeric | valueText | : "",
-            obsSet: {
-                300:{concept,value,group}
-            }
-            }
+
+function getPatients() {
+    pool.getConnection(function(err,connection) {
+        if(err) {
+            result.errorMessage = "Database Connection Error";
+            result.error = err;
+            console.log('Database Connection Error');
+            callback(result);
+            return defer.reject(err);
         }
-    }
+        //var query = "select count(*) as total from amrs.obs where voided=0";
+	var query = "select count(*) as total from etl.person";
+
+        connection.query(query,
+			 function(err,rows,fields) {
+			     var total = rows[0].total;
+			     var maxRows = 1000;
+			     var iterations = Math.floor(total/maxRows);
+			     for(var i=0;i<= iterations;i++) {
+				 //query = "select person_id from amrs.person where voided=0  limit " + maxRows + "," + (i*maxRows);
+				 query = "select person_id from etl.person limit " + maxRows + "," + (i*maxRows);
+				 console.log(query);
+				 connection.query(query,
+						  function(err,rows,fields) {
+						      
+						      for(var i=0 in rows) {
+							  person_id = rows[i]["person_id"];							  
+							  addToElastic(person_id);
+						      }
+						  });
+			     }
+			 }
+			);
+        connection.release();
+    });
+}
+
+
+function getPatients2() {
+    pool.getConnection(function(err,connection) {
+        if(err) {
+            result.errorMessage = "Database Connection Error";
+            result.error = err;
+            console.log('Database Connection Error');
+            callback(result);
+            return defer.reject(err);
+        }
+        //var query = "select count(*) as total from amrs.obs where voided=0";
+	var query = "select person_id from etl.person";
+
+        connection.query(query,
+			 function(err,rows,fields) {			     			     
+			     for(var i in rows) {
+				 console.log(i);
+				 //query = "select person_id from amrs.person where voided=0  limit " + maxRows + "," + (i*maxRows);
+				 person_id = rows[i]["person_id"];							  
+				 
+				 //addToElastic(person_id);
+			     }
+			     addToElastic(rows[0].person_id);
+			 });
+        connection.release();
+    });
+}
+
+
+
+/*
+function test(lastUpdate) {
+
+    //Get any obs that have been voided since last update
+    var query = "select encounter_id from amrs.obs where t2.voided=1 and t2.date_voided >= " + lastUpdate + " and date_created<= " + lastUpdate;
+    
+    //Get encounter UUIds of voided obs
+    
+
+    //add encounter_ids to table of encounters to get from amrs
+    
+    //get encounter_id of obs with voided=0 and date_created >= lastUpdate;
+    //get encounter uuids for encounter_ids
+    
+
+    //delete in elastic any encounter with encounterUUid above
+
+    //build encounters for all above
+    //add to elastic
 }
 */
+/*
+function getObsByDate(startDate) {
+    var defer = q.defer();
+    pool.getConnection(function(err,connection) {
+        if(err) {
+            result.errorMessage = "Database Connection Error";
+            result.error = err;
+            console.log('Database Connection Error');
+            callback(result);
+            return defer.reject(err);
+        }
+        var query = "select count(*) as total from amrs.obs where voided=0 and date_created >= " + startDate;
+	
+        connection.query(query,
+			 function(err,rows,fields) {			     
+			     var total = rows[0].total;
+			     var maxRows = 10000;
+			     var iterations = Math.floor(total/max);
+			     for(var i=0;i<= iterations;i++) {
+				 query = "select * from amrs.obs where voided=0 and date_created >= " + startDate + " limit " + maxRows + "," + (i*maxRows);
+				 connection.query(query,
 
-
-function makeDocuments(encounters) {
-    var documents = [];
-    var prevDocument, document, encounter;
-    for(var i in encounters) {
-        encounter = encounters[i];
-        prevDocument = document;
-        document = makeDocument(encounter,prevDocument);
-        documents.push(document);
-    }
-    return documents;
+			 }
+			);
+        connection.release();
+    });
+    return defer.promise;
 }
-
-
-function makeDocument(encounter,prevDocument) {
-    var indicators = [{"field":"hivStartDate","function":getHivStartDate}];
-    var indicator,result;
-    var document;
-    for(var i in indicators) {
-        indicator = indicators[i];
-        //result = indicator["function"](encounter.obsSet,prevDocument);
-        //document[indicator.field] = result;
-        result = getHivStartDate(encounter["obsSet"]);
-    }
-    return document;
-}
-
-//145991
-
+*/
 
 function makeEncounterDocuments(personId) {
     var defer = q.defer();
     var encounters = {};
     var encounterRow, encounter, obs,obsSet;
-    getPatientData(600).then(function(data) {
-	
+    getPatientData(personId).then(function(data) {
+
 	for(var i=0 in data.encounters) {
 	    encounterRow = data.encounters[i];
 	    encounter = {
+<<<<<<< HEAD
             encounterDatetime: encounterRow["encounter_datetime"],
             encounterType: encounterRow["encounter_type"],
             encounterDatetime: encounterRow["encounter_datetime"],
@@ -223,12 +302,27 @@ function makeEncounterDocuments(personId) {
 
             obsSet:[]
 	    };
+=======
+		"encounterDatetime": encounterRow["encounter_datetime"],
+		"encounterType": encounterRow["encounter_type"],
+		"encounterDatetime": encounterRow["encounter_datetime"],
+		"encounterId": encounterRow["encounter_id"],
+		"encounterUuid": encounterRow["uuid"],
+		"voided":encounterRow.voided,
+		"dateVoided":encounterRow.date_voided,
+		"dateCreated":encounterRow.data_created,
+		
+		"obsSet":[]
+	    }
+>>>>>>> 4c3bd89aea09566e27c6851b3d2e0cc84ee83a2b
 	    encounters[encounterRow.encounter_id] = encounter;
 	    
 	}
+
 	for(var i=0 in data.obsSet) {
 	    obsRow = data.obsSet[i];
 	    obs = {
+<<<<<<< HEAD
             obsId:obsRow.obs_id,
             obsUuid:obsRow.uuid,
             obsDatetime:obsRow.obs_datetime,
@@ -237,6 +331,17 @@ function makeEncounterDocuments(personId) {
             dateVoided:obsRow.date_voided,
             dateCreated:obsRow.data_created
         };
+=======
+		"obsId":obsRow.obs_id,
+		"obsUuid":obsRow.uuid,
+		"obsDatetime":obsRow.obs_datetime,
+		"conceptId":obsRow.concept_id,
+		"voided":obsRow.voided,
+		"dateCreated":obsRow.date_created,		
+	    }
+	    if(obsRow.voided) obs["dateVoided"] = obsRow.date_voided;
+
+>>>>>>> 4c3bd89aea09566e27c6851b3d2e0cc84ee83a2b
 	    if(obsRow.value_coded) obs["valueCoded"] = obsRow.value_coded;
 	    else if(obsRow.value_boolean) obs["valueBoolean"] = obsRow.value_boolean;
 	    else if(obsRow.value_datetime) obs["valueDatetime"] = obsRow.value_datetime;
@@ -256,28 +361,33 @@ function makeEncounterDocuments(personId) {
 
 
 function addToElastic(patientId) {
+
     var body = [];
     var encounter;
-    makeEncounterDocuments(patientId).then(patientEncounters) {
+    makeEncounterDocuments(patientId).then(function(patientEncounters) {
+
 	for(var i in patientEncounters) {
 	    encounter = patientEncounters[i];
-	    body.push({_index:"amrs",_type:"encounter",_id:encounter.encounterId});
-	    body.push(encounter);
+	    body.push({index:{"_index":"amrs","_type":"encounter","_id":encounter.encounterId}});
+	    body.push(encounter);	    
 	}
 	
 	var client = new elasticsearch.Client({
 	    host: '104.236.65.80:9200',
 	    log: 'trace'
 	});
-	client.bulk(body,function(error){console.trace(error.message)});
+	var payload = {
+	    body: body
+	};
 	
-    }
+	client.bulk(payload,function(error){});
+    });
 }
 
 
 var encounterMapping =
-    {
-    "mappings": {
+{
+
         "encounter": {
             "properties": {
                 encounterId: {"type": "integer"},
@@ -322,8 +432,8 @@ var encounterMapping =
                 }
             }
         }
-    }
-};
+
+}
 
 
 function addEncounterMapping() {
@@ -335,18 +445,20 @@ function addEncounterMapping() {
     client.indices.putMapping(
 	{
 	    index:"amrs",
+	    type:"encounter",
 	    body:encounterMapping
 	}
     );
 }
-addEncounterMapping();    
-    
+//addEncounterMapping();    
+getPatients2();    
 
 
 
 
 //getPatientData(600).then(function(data) {console.log(data);});
 
+<<<<<<< HEAD
 var queryBody =
 {
     "query": {
@@ -365,8 +477,22 @@ var queryBody =
 
 }
 
+=======
+//145991
+>>>>>>> 4c3bd89aea09566e27c6851b3d2e0cc84ee83a2b
 
-addToElastic(600).then(function(data) { console.log(data);});
+/*
+addToElastic(600);
+addToElastic(145991);
+addToElastic(657);
+addToElastic(715);
+addToElastic(760);
+addToElastic(786);
+addToElastic(798);
+addToElastic(845);
+addToElastic(859);
+addToElastic(964);
+*/
 //console.log(e);
 
 function join(query1,query2, joinFields) {
