@@ -84,8 +84,8 @@ function getEncounters(encounterIds) {
         }
         ids = encounterIds.join();
 
-        var query = "select * from amrs.encounter t1"
-	query += " join amrs.encounter_type t2 on t1.encounter_type = t2.encounter_type_id"
+        var query = "select * from amrs.encounter t1";
+	query += " join amrs.encounter_type t2 on t1.encounter_type = t2.encounter_type_id";
 	query += " where t1.voided=0 and encounter_id in (" + ids + ")";
 	console.log(query);
         connection.query(query,
@@ -212,31 +212,31 @@ function makeEncounterDocuments(personId) {
 	for(var i=0 in data.encounters) {
 	    encounterRow = data.encounters[i];
 	    encounter = {
-		encounterDatetime: encounterRow["encounter_datetime"],
-		encounterType: encounterRow["encounter_type"],
-		encounterDatetime: encounterRow["encounter_datetime"],
-		encounterId: encounterRow["encounter_id"],
-		encounterUuid: encounterRow["uuid"],
-		voided:encounterRow.voided,
-		dateVoided:encounterRow.date_voided,
-		dateCreated:encounterRow.data_created,
-		
-		obsSet:[]
-	    }
+            encounterDatetime: encounterRow["encounter_datetime"],
+            encounterType: encounterRow["encounter_type"],
+            encounterDatetime: encounterRow["encounter_datetime"],
+            encounterId: encounterRow["encounter_id"],
+            encounterUuid: encounterRow["uuid"],
+            voided:encounterRow.voided,
+            dateVoided:encounterRow.date_voided,
+            dateCreated:encounterRow.data_created,
+
+            obsSet:[]
+	    };
 	    encounters[encounterRow.encounter_id] = encounter;
 	    
 	}
 	for(var i=0 in data.obsSet) {
 	    obsRow = data.obsSet[i];
 	    obs = {
-		obsId:obsRow.obs_id,
-		obsUuid:obsRow.uuid,
-		obsDatetime:obsRow.obs_datetime,
-		conceptId:obsRow.concept_id,
-		voided:obsRow.voided,
-		dateVoided:obsRow.date_voided,
-		dateCreated:obsRow.data_created,		
-	    }
+            obsId:obsRow.obs_id,
+            obsUuid:obsRow.uuid,
+            obsDatetime:obsRow.obs_datetime,
+            conceptId:obsRow.concept_id,
+            voided:obsRow.voided,
+            dateVoided:obsRow.date_voided,
+            dateCreated:obsRow.data_created
+        };
 	    if(obsRow.value_coded) obs["valueCoded"] = obsRow.value_coded;
 	    else if(obsRow.value_boolean) obs["valueBoolean"] = obsRow.value_boolean;
 	    else if(obsRow.value_datetime) obs["valueDatetime"] = obsRow.value_datetime;
@@ -347,7 +347,36 @@ addEncounterMapping();
 
 //getPatientData(600).then(function(data) {console.log(data);});
 
+var queryBody =
+{
+    "query": {
+        filtered: {
+            "query": "match_all"
+            "filter": {
+                terms: {
+                    "field":"gender"
+                    "value":"male"
+                    "field":"encounterId",
+                    "value":
+}
+        }
+    }
+
+
+}
+
 
 addToElastic(600).then(function(data) { console.log(data);});
 //console.log(e);
 
+function join(query1,query2, joinFields) {
+    var client = new elasticsearch.Client({
+        host: '104.236.65.80:9200',
+        log: 'trace'
+    });
+
+    client.search(query1,funtion(result) {
+        result
+    }
+
+}
